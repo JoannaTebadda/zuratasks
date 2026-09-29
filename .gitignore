@@ -1,0 +1,21 @@
+# SQLite database - created automatically on first run
+tasks.db
+*.db
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Flask
+instance/
+*.log

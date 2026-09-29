@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZuraTasks</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <main class="app">
+        <header class="app__header">
+            <h1 class="app__title">ZuraTasks</h1>
+            <p class="app__count" id="count" aria-live="polite">No tasks yet</p>
+        </header>
+
+        <form class="add" id="add-form" autocomplete="off">
+            <input
+                class="add__input"
+                id="add-input"
+                type="text"
+                name="title"
+                placeholder="Add a task&hellip;"
+                maxlength="200"
+                aria-label="New task title">
+            <select class="add__select" id="add-priority" aria-label="Priority">
+                <option value="high">High</option>
+                <option value="medium" selected>Medium</option>
+                <option value="low">Low</option>
+            </select>
+            <input class="add__date" id="add-due" type="date" aria-label="Due date">
+            <button class="add__btn" type="submit">Add</button>
+        </form>
+
+        <p class="error" id="error" role="alert" hidden></p>
+
+        <div class="layout">
+            <section class="card calendar" aria-label="Due date calendar">
+                <header class="calendar__head">
+                    <button class="icon-btn" id="prev-month" type="button"
+                            aria-label="Previous month">&lsaquo;</button>
+                    <h2 class="calendar__title" id="calendar-title">&nbsp;</h2>
+                    <button class="icon-btn" id="next-month" type="button"
+                            aria-label="Next month">&rsaquo;</button>
+                </header>
+                <div class="calendar__weekdays" aria-hidden="true">
+                    <span>Su</span><span>Mo</span><span>Tu</span><span>We</span>
+                    <span>Th</span><span>Fr</span><span>Sa</span>
+                </div>
+                <div class="calendar__grid" id="calendar-grid"></div>
+                <button class="calendar__clear" id="clear-filter" type="button" hidden></button>
+            </section>
+
+            <section class="groups" aria-label="Tasks by priority">
+                <div id="groups"></div>
+                <p class="empty" id="empty" hidden></p>
+            </section>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
