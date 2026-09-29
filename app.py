@@ -3,19 +3,44 @@
 Backend: Flask + SQLite. Frontend: vanilla JS in static/app.js.
 """
 
+import logging
+import os
+import platform
 import sqlite3
+import tempfile
 from datetime import date
 from pathlib import Path
 
 from flask import Flask, g, jsonify, render_template, request
 
 BASE_DIR = Path(__file__).resolve().parent
-DATABASE = BASE_DIR / "tasks.db"
 
 PRIORITIES = ("high", "medium", "low")
 DEFAULT_PRIORITY = "medium"
 
 app = Flask(__name__)
+log = logging.getLogger("zuratasks")
+
+
+def _database_path():
+    """Return the SQLite file to use.
+
+    * ``ZURATASKS_DB`` wins when set, so you can point the app at any file.
+    * On Vercel the deployment directory is read-only, so the file goes to
+      ``/tmp``, the only writable place inside a Function. Read the deployment
+      notes in the README: that storage is per-instance and does not survive a
+      cold start, which is why Vercel's advice is a hosted database instead.
+    * Everywhere else it is ``tasks.db`` next to ``app.py``, exactly as before.
+    """
+    override = os.environ.get("ZURATASKS_DB")
+    if override:
+        return Path(override)
+    if os.environ.get("VERCEL"):
+        return Path(tempfile.gettempdir()) / "tasks.db"
+    return BASE_DIR / "tasks.db"
+
+
+DATABASE = _database_path()
 
 
 # --------------------------------------------------------------------------- #
@@ -24,7 +49,9 @@ app = Flask(__name__)
 def get_db():
     """Return a connection to the SQLite database, scoped to this request."""
     if "db" not in g:
-        g.db = sqlite3.connect(DATABASE)
+        # A timeout keeps concurrent requests in one Function from failing with
+        # "database is locked" while another one commits.
+        g.db = sqlite3.connect(DATABASE, timeout=10)
         g.db.row_factory = sqlite3.Row
     return g.db
 
@@ -71,6 +98,23 @@ def _migrate(db):
     for column, statement in additions.items():
         if column not in existing:
             db.execute(statement)
+
+
+def database_writable():
+    """True when the folder holding the database accepts writes.
+
+    This is what tells a broken deployment apart from an empty one: on Vercel
+    the deployment directory is read-only and only ``/tmp`` accepts writes.
+    """
+    if not os.access(DATABASE.parent, os.W_OK):
+        return False
+    probe = DATABASE.parent / ".zuratasks-write-test"
+    try:
+        probe.touch(exist_ok=True)
+        probe.unlink()
+    except OSError:
+        return False
+    return True
 
 
 # --------------------------------------------------------------------------- #
@@ -146,6 +190,30 @@ def all_tasks():
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/healthz")
+def healthz():
+    """Report where the data lives and whether it can be used.
+
+    A deployed Function that answers 500 says nothing about why; this says which
+    database file the app picked, whether it is writable, and how many tasks it
+    can see.
+    """
+    payload = {
+        "status": "ok",
+        "database": str(DATABASE),
+        "writable": database_writable(),
+        "runtime": platform.python_version(),
+        "platform": "vercel" if os.environ.get("VERCEL") else "local",
+    }
+    try:
+        count = get_db().execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+    except (OSError, sqlite3.Error) as exc:
+        payload.update(status="error", error=str(exc))
+        return jsonify(payload), 503
+    payload["tasks"] = count
+    return jsonify(payload)
 
 
 @app.route("/tasks", methods=["GET"])
@@ -239,6 +307,19 @@ def delete_task(task_id):
     return jsonify(all_tasks())
 
 
+@app.errorhandler(sqlite3.Error)
+def database_error(exc):
+    """Answer a database failure with 503 and a hint instead of an opaque 500."""
+    log.error("Database error on %s: %s", DATABASE, exc)
+    return jsonify({
+        "error": "Database unavailable.",
+        "detail": str(exc),
+        "database": str(DATABASE),
+        "hint": "Point ZURATASKS_DB at a writable path, or move off SQLite on "
+                "serverless (see 'Deploying to Vercel' in the README).",
+    }), 503
+
+
 @app.cli.command("init-db")
 def init_db_command():
     """Run with: flask --app app init-db"""
@@ -247,7 +328,13 @@ def init_db_command():
 
 
 # Tables are created on first import so the app just works with `python app.py`.
-init_db()
+# A database that cannot be created (a read-only deployment directory is what
+# broke Vercel) must not take the whole Function down: log it, and let the
+# request path answer 503 with the reason instead of an opaque 500.
+try:
+    init_db()
+except (OSError, sqlite3.Error) as exc:
+    log.warning("Database at %s is not usable: %s", DATABASE, exc)
 
 
 if __name__ == "__main__":
