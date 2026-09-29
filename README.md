@@ -1,7 +1,7 @@
 # ZuraTasks &mdash; Flask + SQLite
 
 A to-do app with **priority sections**, **due dates** and a **month calendar**.
-Dark theme, neon-green accent, vanilla JS front end.
+Soft purple-and-pink theme on white, vanilla JS front end.
 
 ## Features
 
@@ -10,12 +10,12 @@ Dark theme, neon-green accent, vanilla JS front end.
   The heading, its dot and the left edge of each row are tinted to match.
 * **Due dates.** Set a date when adding a task, or later with the pencil button.
   Dates read as `Today`, `Tomorrow`, `Yesterday` or `5 Oct`; open tasks past their
-  date are flagged **Overdue** in red and counted in the header.
+  date are flagged **Overdue** in rose and counted in the header.
 * **Calendar.** The month grid marks every day that has something due, with one
-  coloured dot per task (red = high, amber = medium, green = low). Today is
-  outlined, overdue days turn red, and clicking a day filters the list to what is
-  due that day. Click the day again, or the button under the calendar, to clear.
-  `&lsaquo;` / `&rsaquo;` step through months.
+  coloured dot per task (rose = high, violet = medium, teal = low). Today is
+  outlined in purple, overdue days turn rose, and clicking a day filters the list
+  to what is due that day. Click the day again, or the button under the calendar,
+  to clear. `&lsaquo;` / `&rsaquo;` step through months.
 * **Inline editing.** The pencil on a row swaps it for title, priority and date
   fields: `Enter` or **Save** applies the change via `PATCH /tasks/<id>`,
   `Escape` or **Cancel** abandons it.
