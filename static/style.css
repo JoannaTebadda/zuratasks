@@ -77,6 +77,7 @@ body {
 .app__header {
     position: relative;
     display: flex;
+    flex-wrap: wrap;                 /* the count pill drops below on tiny screens */
     align-items: center;
     justify-content: space-between;
     gap: 12px;
@@ -97,6 +98,7 @@ body {
 }
 
 .app__title {
+    min-width: 0;
     font-size: 1.95rem;
     font-weight: 750;
     letter-spacing: -0.025em;
