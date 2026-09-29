@@ -33,12 +33,16 @@ Dark theme, neon-green accent, vanilla JS front end.
 ## Run it
 
 ```bash
-cd "To do app"
+git clone https://github.com/JoannaTebadda/zuratasks.git
+cd zuratasks
 py -m pip install -r requirements.txt
 py app.py
 ```
 
-Then open <http://127.0.0.1:5000>.
+Then open <http://127.0.0.1:5000>. Use `python` instead of `py` if that launcher
+is on your PATH.
+
+Source: <https://github.com/JoannaTebadda/zuratasks>
 
 `tasks.db` is created automatically next to `app.py` on first run, so there is
 no separate migration step. Delete that file to start over.
