@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#fbf8ff" id="theme-color">
     <title>ZuraTasks</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=5">
     <script>
         /* Runs before the first paint so a saved dark theme never flashes white. */
         (function () {
@@ -34,14 +34,10 @@
                 <h1 class="app__title">ZuraTasks</h1>
             </div>
 
-            <div class="app__meta">
-                <p class="app__count" id="count" aria-live="polite">No tasks yet</p>
-                <div class="progress" id="progress" role="progressbar" hidden
-                     aria-label="Tasks completed" aria-valuemin="0"
-                     aria-valuemax="0" aria-valuenow="0">
-                    <span class="progress__bar" id="progress-bar"></span>
-                </div>
-            </div>
+            <!-- Time of day plus today's date, filled in by app.js. -->
+            <p class="app__greeting" id="greeting">&nbsp;</p>
+
+            <p class="app__count" id="count" aria-live="polite">No tasks yet</p>
 
             <button class="theme-toggle" id="theme-toggle" type="button"
                     aria-pressed="false" aria-label="Switch to dark mode"
@@ -59,6 +55,13 @@
                 </svg>
             </button>
         </header>
+
+        <!-- Full width progress bar, filled by app.js from the task list. -->
+        <div class="progress" id="progress" role="progressbar" aria-label="Tasks completed"
+             aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"
+             aria-valuetext="No tasks yet">
+            <span class="progress__bar" id="progress-bar"></span>
+        </div>
 
         <form class="add" id="add-form" autocomplete="off">
             <input
@@ -130,6 +133,6 @@
 
     <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="{{ url_for('static', filename='app.js') }}?v=4"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=5"></script>
 </body>
 </html>

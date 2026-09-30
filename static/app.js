@@ -12,6 +12,9 @@ const MONTH_NAMES = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December",
 ];
+const WEEKDAY_NAMES = [
+    "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+];
 
 /* Empty-state artwork, inlined so the page still needs no extra files. */
 const EMPTY_ICON = [
@@ -41,6 +44,7 @@ const progressBar = document.getElementById("progress-bar");
 const themeBtn    = document.getElementById("theme-toggle");
 const metaTheme   = document.getElementById("theme-color");
 const toastsEl    = document.getElementById("toasts");
+const greetingEl  = document.getElementById("greeting");
 
 let tasks = ensureIds(readCache());
 let selectedDate = null;      // "YYYY-MM-DD" day picked in the calendar, or null
@@ -216,26 +220,46 @@ function render() {
     renderGroups();
     renderCalendar();
     renderCount();
+    renderGreeting();
 }
 
-/* "3 of 8 done" plus a thin bar; keeps the original wording for an empty list. */
+/* "Good morning · Wednesday, 30 September". The date is assembled by hand so
+   the day reads before the month whatever the browser's locale is. */
+function renderGreeting() {
+    const now = new Date();
+    const hour = now.getHours();
+    const part = hour < 12 ? "Good morning"
+        : hour < 18 ? "Good afternoon"
+            : "Good evening";
+    const stamp = `${WEEKDAY_NAMES[now.getDay()]}, ${now.getDate()} ` +
+        MONTH_NAMES[now.getMonth()];
+    greetingEl.textContent = `${part} \u00b7 ${stamp}`;
+}
+
+/* "1 of 2 done · 50%" beside the bar; "All done!" and a green fill at 100%. */
 function renderCount() {
     const done = tasks.filter((t) => t.completed).length;
     const overdue = tasks.filter(isOverdue).length;
     const percent = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+    const finished = tasks.length > 0 && done === tasks.length;
 
     if (tasks.length === 0) {
         count.textContent = "No tasks yet";
+    } else if (finished) {
+        count.textContent = `All done! \u00b7 ${done} of ${tasks.length} done \u00b7 100%`;
     } else {
-        const parts = [`${done} of ${tasks.length} done`];
+        const parts = [`${done} of ${tasks.length} done`, `${percent}%`];
         if (overdue > 0) parts.push(`${overdue} overdue`);
         count.textContent = parts.join(" \u00b7 ");
     }
 
-    progressEl.hidden = tasks.length === 0;
+    progressEl.classList.toggle("progress--full", finished);
     progressEl.setAttribute("aria-valuemax", String(tasks.length));
     progressEl.setAttribute("aria-valuenow", String(done));
-    progressEl.setAttribute("aria-valuetext", `${done} of ${tasks.length} done`);
+    progressEl.setAttribute("aria-valuetext",
+        tasks.length === 0
+            ? "No tasks yet"
+            : `${done} of ${tasks.length} done, ${percent}%`);
     progressBar.style.width = `${percent}%`;
 }
 
@@ -759,6 +783,9 @@ if (window.matchMedia) {
         media.addEventListener("change", followSystem);
     }
 }
+
+/* Keep the greeting honest if the page is left open past noon or midnight. */
+setInterval(renderGreeting, 60000);
 
 /* The page pre-set data-theme in the head; the rest paints from the store. */
 applyTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
