@@ -1,9 +1,10 @@
-/* ZuraTasks. SQLite (via Flask) is the source of truth and localStorage holds a
-   snapshot so the list paints instantly on reload while the fetch settles.
-   Priority grouping and the calendar are pure client-side views of that one
-   list, which keeps the API small. */
+/* ZuraTasks. Every task lives in this browser's localStorage: on Vercel a
+   Function can only write to /tmp, which is per-instance and wiped on a cold
+   start, so neither a file nor SQLite can hold the list. Priority sections, the
+   calendar, the filters and the search are views of that one array. */
 
-const CACHE_KEY = "zuratasks.snapshot";
+const CACHE_KEY = "zuratasks.snapshot";   // the store: the whole task list
+const THEME_KEY = "zuratasks.theme";      // remembers the dark mode choice
 
 const PRIORITIES = ["high", "medium", "low"];
 const PRIORITY_LABEL = { high: "High", medium: "Medium", low: "Low" };
@@ -12,23 +13,43 @@ const MONTH_NAMES = [
     "July", "August", "September", "October", "November", "December",
 ];
 
-const form       = document.getElementById("add-form");
-const input      = document.getElementById("add-input");
-const priorityEl = document.getElementById("add-priority");
-const dueEl      = document.getElementById("add-due");
-const groupsEl   = document.getElementById("groups");
-const empty      = document.getElementById("empty");
-const count      = document.getElementById("count");
-const errorEl    = document.getElementById("error");
-const gridEl     = document.getElementById("calendar-grid");
-const calTitle   = document.getElementById("calendar-title");
-const prevBtn    = document.getElementById("prev-month");
-const nextBtn    = document.getElementById("next-month");
-const clearBtn   = document.getElementById("clear-filter");
+/* Empty-state artwork, inlined so the page still needs no extra files. */
+const EMPTY_ICON = [
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"',
+    ' stroke-linecap="round" stroke-linejoin="round" width="42" height="42">',
+    '<rect x="4" y="3.5" width="16" height="17" rx="3"></rect>',
+    '<path d="M8.5 12l2.4 2.4L16 9.5"></path></svg>',
+].join("");
 
-let tasks = readCache();
+const form        = document.getElementById("add-form");
+const input       = document.getElementById("add-input");
+const priorityEl  = document.getElementById("add-priority");
+const dueEl       = document.getElementById("add-due");
+const groupsEl    = document.getElementById("groups");
+const empty       = document.getElementById("empty");
+const count       = document.getElementById("count");
+const errorEl     = document.getElementById("error");
+const gridEl      = document.getElementById("calendar-grid");
+const calTitle    = document.getElementById("calendar-title");
+const prevBtn     = document.getElementById("prev-month");
+const nextBtn     = document.getElementById("next-month");
+const clearBtn    = document.getElementById("clear-filter");
+const tabsEl      = document.getElementById("tabs");
+const searchEl    = document.getElementById("search");
+const progressEl  = document.getElementById("progress");
+const progressBar = document.getElementById("progress-bar");
+const themeBtn    = document.getElementById("theme-toggle");
+const metaTheme   = document.getElementById("theme-color");
+const toastsEl    = document.getElementById("toasts");
+
+let tasks = ensureIds(readCache());
 let selectedDate = null;      // "YYYY-MM-DD" day picked in the calendar, or null
 let editingId = null;         // id of the task open in the inline editor
+let focusEditor = false;      // jump into the title field on the next paint
+let filter = "all";           // all | today | upcoming | done
+let query = "";               // search text, lower-cased
+let canStore = true;          // false once localStorage refuses a write
+const entering = new Set();   // ids to fade in on the next paint
 
 const today = new Date();
 const view = { year: today.getFullYear(), month: today.getMonth() };
@@ -62,12 +83,47 @@ function isOverdue(task) {
     return Boolean(task.due_date) && !task.completed && task.due_date < iso(new Date());
 }
 
+/* -------------------------------- storage -------------------------------- */
+/* localStorage is the only store, so both directions are guarded: private
+   browsing, a full quota or blocked storage must never break the page. */
+function normalise(task) {
+    if (!task || typeof task.title !== "string" || !task.title.trim()) return null;
+    return {
+        id: Number.isFinite(task.id) ? Math.trunc(task.id) : 0,
+        title: task.title.trim().slice(0, 200),
+        completed: Boolean(task.completed),
+        priority: PRIORITIES.includes(task.priority) ? task.priority : "medium",
+        due_date: /^\d{4}-\d{2}-\d{2}$/.test(task.due_date) ? task.due_date : null,
+        created_at: typeof task.created_at === "string" ? task.created_at : "",
+    };
+}
+
+/* Hand a fresh id to anything the stored list is missing or reusing. */
+function ensureIds(list) {
+    const seen = new Set();
+    let max = 0;
+    for (const task of list) {
+        if (task.id > 0 && !seen.has(task.id)) {
+            seen.add(task.id);
+            max = Math.max(max, task.id);
+        } else {
+            task.id = 0;                      // claimed again just below
+        }
+    }
+    for (const task of list) {
+        if (task.id === 0) task.id = ++max;
+    }
+    return list;
+}
+
 function readCache() {
     try {
         const raw = localStorage.getItem(CACHE_KEY);
         const parsed = raw ? JSON.parse(raw) : null;
-        return Array.isArray(parsed) ? parsed : [];
+        if (!Array.isArray(parsed)) return [];
+        return parsed.map(normalise).filter(Boolean);
     } catch {
+        /* Unreadable or corrupt: start from an empty list rather than crash. */
         return [];
     }
 }
@@ -75,67 +131,148 @@ function readCache() {
 function writeCache() {
     try {
         localStorage.setItem(CACHE_KEY, JSON.stringify(tasks));
+        return true;
     } catch {
-        /* storage full or blocked by privacy settings - server copy still rules */
+        /* Blocked or full. Keep the session usable in memory and say so once,
+           instead of throwing on every single change. */
+        if (canStore) {
+            canStore = false;
+            showError("This browser is not saving tasks (private mode or full " +
+                      "storage). They will reset when the page is reloaded.");
+        }
+        return false;
     }
 }
 
+/* Every change goes through here: persist first, then repaint. */
+function commit() {
+    writeCache();
+    render();
+}
+
+/* -------------------------------- messages -------------------------------- */
 function showError(message) {
     errorEl.textContent = message;
     errorEl.hidden = false;
+    form.classList.remove("add--invalid");
+    void form.offsetWidth;                    // restart the shake animation
+    form.classList.add("add--invalid");
 }
 
 function clearError() {
     errorEl.hidden = true;
     errorEl.textContent = "";
+    form.classList.remove("add--invalid");
+    input.removeAttribute("aria-invalid");
 }
 
-/* Every mutating endpoint returns the full, up-to-date list. */
-async function api(url, options = {}) {
-    const res = await fetch(url, {
-        headers: { "Content-Type": "application/json" },
-        ...options,
-    });
-    const body = await res.json().catch(() => null);
-    if (!res.ok) {
-        throw new Error((body && body.error) || `Request failed (${res.status})`);
+/* Small confirmation after adding, completing or deleting a task. */
+function toast(message, kind = "info") {
+    const el = document.createElement("div");
+    el.className = `toast toast--${kind}`;
+    el.setAttribute("role", "status");
+    el.textContent = message;
+    toastsEl.appendChild(el);
+    while (toastsEl.children.length > 3) toastsEl.firstChild.remove();
+    setTimeout(() => el.classList.add("toast--leaving"), 2400);
+    setTimeout(() => el.remove(), 2700);
+}
+
+/* ------------------------------ what is shown ----------------------------- */
+/* Soonest due date first, never-dated tasks last, newest task first on a tie. */
+function byDueDate(a, b) {
+    if (a.due_date && b.due_date) {
+        if (a.due_date !== b.due_date) return a.due_date < b.due_date ? -1 : 1;
+    } else if (a.due_date || b.due_date) {
+        return a.due_date ? -1 : 1;
     }
-    tasks = Array.isArray(body) ? body : [];
-    writeCache();
-    render();
+    return b.id - a.id;
 }
 
+function matchesFilter(task) {
+    if (filter === "done") return task.completed;
+    if (filter === "today") return task.due_date === iso(new Date());
+    if (filter === "upcoming") {
+        return !task.completed && Boolean(task.due_date) && task.due_date > iso(new Date());
+    }
+    return true;                              // "all"
+}
+
+function matchesSearch(task) {
+    return query === "" || task.title.toLowerCase().includes(query);
+}
+
+/* The list shows: day filter, then tab, then search, sorted inside a section. */
+function visibleTasks() {
+    return tasks
+        .filter((t) => !selectedDate || t.due_date === selectedDate)
+        .filter(matchesFilter)
+        .filter(matchesSearch)
+        .sort(byDueDate);
+}
+
+/* --------------------------------- render --------------------------------- */
 function render() {
     renderGroups();
     renderCalendar();
     renderCount();
 }
 
+/* "3 of 8 done" plus a thin bar; keeps the original wording for an empty list. */
 function renderCount() {
-    if (tasks.length === 0) {
-        count.textContent = "No tasks yet";
-        return;
-    }
     const done = tasks.filter((t) => t.completed).length;
     const overdue = tasks.filter(isOverdue).length;
-    const parts = [`${done} of ${tasks.length} done`];
-    if (overdue > 0) parts.push(`${overdue} overdue`);
-    count.textContent = parts.join(" \u00b7 ");
+    const percent = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+
+    if (tasks.length === 0) {
+        count.textContent = "No tasks yet";
+    } else {
+        const parts = [`${done} of ${tasks.length} done`];
+        if (overdue > 0) parts.push(`${overdue} overdue`);
+        count.textContent = parts.join(" \u00b7 ");
+    }
+
+    progressEl.hidden = tasks.length === 0;
+    progressEl.setAttribute("aria-valuemax", String(tasks.length));
+    progressEl.setAttribute("aria-valuenow", String(done));
+    progressEl.setAttribute("aria-valuetext", `${done} of ${tasks.length} done`);
+    progressBar.style.width = `${percent}%`;
 }
 
-function visibleTasks() {
-    return selectedDate ? tasks.filter((t) => t.due_date === selectedDate) : tasks;
+/* Explains an empty list instead of leaving a blank column. */
+function emptyMessage() {
+    if (tasks.length === 0) return "Nothing here yet. Add your first task above.";
+    if (query) return `No tasks match \u201c${query}\u201d.`;
+    if (selectedDate) return `Nothing is due on ${humanDate(selectedDate)}.`;
+    if (filter === "today") return "Nothing due today. Enjoy the quiet.";
+    if (filter === "upcoming") return "Nothing planned ahead. Add a due date to fill this up.";
+    if (filter === "done") return "No finished tasks yet. Tick one off and it lands here.";
+    return "No tasks to show.";
+}
+
+function renderEmpty() {
+    empty.textContent = "";
+    const icon = document.createElement("span");
+    icon.className = "empty__icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = EMPTY_ICON;
+    const text = document.createElement("span");
+    text.className = "empty__text";
+    text.textContent = emptyMessage();
+    empty.append(icon, text);
+    empty.hidden = false;
 }
 
 /* Three fixed sections so the grouping is always visible, even when empty. */
 function renderGroups() {
     groupsEl.textContent = "";
-    const visible = visibleTasks();
+    const visible = visibleTasks();           // already sorted by due date
 
-    empty.hidden = visible.length > 0;
-    empty.textContent = selectedDate
-        ? `No tasks due on ${humanDate(selectedDate)}.`
-        : "Nothing here yet. Add your first task above.";
+    if (visible.length === 0) {
+        renderEmpty();
+    } else {
+        empty.hidden = true;
+    }
 
     for (const priority of PRIORITIES) {
         groupsEl.appendChild(
@@ -183,67 +320,117 @@ function createGroup(priority, items) {
     return section;
 }
 
+/* A card: priority stripe, checkbox, title, badges, Edit and Delete. */
 function createItem(task) {
     const li = document.createElement("li");
-    li.className = task.completed ? "item item--done" : "item";
+    li.className = `item item--${task.priority}`;
+    if (task.completed) li.classList.add("item--done");
+    if (entering.delete(task.id)) li.classList.add("item--enter");
+    li.dataset.id = String(task.id);
 
     const check = document.createElement("button");
     check.type = "button";
     check.className = "item__check";
+    check.setAttribute("role", "checkbox");
+    check.setAttribute("aria-checked", String(Boolean(task.completed)));
     check.setAttribute(
         "aria-label",
         `${task.completed ? "Mark incomplete" : "Mark complete"}: ${task.title}`
     );
     check.addEventListener("click", () => toggle(task));
 
+    const body = document.createElement("div");
+    body.className = "item__body";
+
     const title = document.createElement("span");
     title.className = "item__title";
     title.textContent = task.title;
 
-    li.append(check, title);
+    const meta = document.createElement("span");
+    meta.className = "item__meta";
+
+    const badge = document.createElement("span");
+    badge.className = `chip chip--prio chip--${task.priority}`;
+    badge.textContent = PRIORITY_LABEL[task.priority];
+    meta.appendChild(badge);
 
     if (task.due_date) {
         const overdue = isOverdue(task);
-        const chip = document.createElement("span");
-        chip.className = "chip";
-        if (overdue) {
-            chip.classList.add("chip--overdue");
-            chip.textContent = `Overdue \u00b7 ${humanDate(task.due_date)}`;
+        const soon = !task.completed && task.due_date <= shiftIso(1);
+        const stamp = `Due ${humanDate(task.due_date)}`;
+        if (overdue || !soon) {
+            const date = document.createElement("span");
+            date.className = "item__date";
+            if (overdue) date.classList.add("item__date--overdue");
+            date.textContent = stamp;
+            date.title = `Due ${task.due_date}`;
+            meta.appendChild(date);
         } else {
-            if (!task.completed && task.due_date <= shiftIso(1)) {
-                chip.classList.add("chip--today");
-            }
-            chip.textContent = `Due ${humanDate(task.due_date)}`;
+            const chip = document.createElement("span");
+            chip.className = "chip chip--today";
+            chip.textContent = stamp;
+            chip.title = `Due ${task.due_date}`;
+            meta.appendChild(chip);
         }
-        chip.title = `Due ${task.due_date}`;
-        li.appendChild(chip);
+        if (overdue) {
+            const late = document.createElement("span");
+            late.className = "chip chip--overdue";
+            late.textContent = "Overdue";
+            meta.appendChild(late);
+        }
     }
+
+    body.append(title, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "item__actions";
 
     const edit = document.createElement("button");
     edit.type = "button";
     edit.className = "item__edit";
-    edit.textContent = "\u270e";
+    edit.textContent = "\u270e Edit";
     edit.title = "Edit task";
     edit.setAttribute("aria-label", `Edit: ${task.title}`);
     edit.addEventListener("click", () => {
         editingId = task.id;
+        focusEditor = true;
         render();
     });
 
     const del = document.createElement("button");
     del.type = "button";
     del.className = "item__delete";
-    del.innerHTML = "&times;";
+    del.textContent = "\u00d7 Delete";
+    del.title = "Delete task";
     del.setAttribute("aria-label", `Delete: ${task.title}`);
-    del.addEventListener("click", () => remove(task));
+    del.addEventListener("click", () => remove(task, li));
 
-    li.append(edit, del);
+    actions.append(edit, del);
+    li.append(check, body, actions);
     return li;
+}
+
+/* Fade a card out, then apply the change; the timer covers "no animation". */
+function leave(li, finish) {
+    if (!li) {
+        finish();
+        return;
+    }
+    li.classList.add("item--leaving");
+    let done = false;
+    const once = () => {
+        if (done) return;
+        done = true;
+        finish();
+    };
+    li.addEventListener("animationend", once);
+    setTimeout(once, 320);
 }
 
 function createEditor(task) {
     const li = document.createElement("li");
-    li.className = "item item--editing";
+    li.className = `item item--editing item--${task.priority}`;
+    li.dataset.id = String(task.id);
 
     const title = document.createElement("input");
     title.type = "text";
@@ -270,13 +457,20 @@ function createEditor(task) {
     save.type = "button";
     save.className = "btn-mini btn-mini--save";
     save.textContent = "Save";
-    save.addEventListener("click", () =>
+    save.addEventListener("click", () => {
+        if (!title.value.trim()) {
+            title.setAttribute("aria-invalid", "true");
+            showError("A task needs a title \u2014 type one, or press Cancel.");
+            title.focus();
+            return;
+        }
+        title.removeAttribute("aria-invalid");
         saveEdit(task, {
             title: title.value,
             priority: priority.value,
             due_date: due.value,
-        })
-    );
+        });
+    });
 
     const cancel = document.createElement("button");
     cancel.type = "button";
@@ -294,6 +488,11 @@ function createEditor(task) {
     });
 
     li.append(title, priority, due, save, cancel);
+
+    if (focusEditor) {                        // opened from the Edit button
+        focusEditor = false;
+        setTimeout(() => title.focus(), 0);
+    }
     return li;
 }
 
@@ -321,11 +520,13 @@ function renderCalendar() {
         if (due.length > 0) {
             day.classList.add("day--has");
             if (due.some((t) => isOverdue(t))) day.classList.add("day--overdue");
+            if (due.every((t) => t.completed)) day.classList.add("day--clear");
         }
         day.setAttribute(
             "aria-label",
             due.length > 0 ? `${stamp}: ${due.length} task(s) due` : stamp
         );
+        day.setAttribute("aria-pressed", String(stamp === selectedDate));
         day.title = due.length > 0 ? `${due.length} task(s) due` : "";
 
         const num = document.createElement("span");
@@ -354,9 +555,15 @@ function renderCalendar() {
     }
 }
 
+/* Clicking the same day again clears the filter; picking a day shows every tab
+   so the day you clicked is never filtered out by the tab underneath it. */
 function selectDate(stamp) {
     selectedDate = selectedDate === stamp ? null : stamp;
     editingId = null;
+    if (selectedDate && filter !== "all") {
+        filter = "all";
+        syncTabs();
+    }
     render();
 }
 
@@ -367,70 +574,193 @@ function stepMonth(delta) {
     renderCalendar();
 }
 
-async function add(payload) {
-    await api("/tasks", { method: "POST", body: JSON.stringify(payload) });
+/* ------------------------------- changes ---------------------------------- */
+function nextId() {
+    return tasks.reduce((max, task) => Math.max(max, task.id), 0) + 1;
 }
 
-async function toggle(task) {
-    await api(`/tasks/${task.id}/toggle`, { method: "POST" });
+/* Keeps the tab buttons in step with the active filter. */
+function syncTabs() {
+    for (const tab of tabsEl.children) {
+        const active = (tab.dataset.filter || "all") === filter;
+        tab.classList.toggle("tab--active", active);
+        tab.setAttribute("aria-pressed", String(active));
+    }
 }
 
-async function remove(task) {
-    if (editingId === task.id) editingId = null;
-    await api(`/tasks/${task.id}`, { method: "DELETE" });
+/* A brand new task must never land invisibly: drop whatever would hide it. */
+function ensureVisible(task) {
+    let changed = false;
+    if (!matchesFilter(task)) {
+        filter = "all";
+        changed = true;
+    }
+    if (query && !matchesSearch(task)) {
+        query = "";
+        searchEl.value = "";
+        changed = true;
+    }
+    if (selectedDate && task.due_date !== selectedDate) {
+        selectedDate = null;
+        changed = true;
+    }
+    if (changed) {
+        syncTabs();
+        render();
+    }
 }
 
-async function saveEdit(task, changes) {
+function add(payload) {
+    const task = {
+        id: nextId(),
+        title: payload.title.trim().slice(0, 200),
+        completed: false,
+        priority: PRIORITIES.includes(payload.priority) ? payload.priority : "medium",
+        due_date: payload.due_date || null,
+        created_at: new Date().toISOString(),
+    };
+    tasks.push(task);
+    entering.add(task.id);          // fade this one card in on the next paint
+    commit();
+    ensureVisible(task);
+    toast(`Added: ${task.title}`, "success");
+    return task;
+}
+
+function toggle(task) {
+    task.completed = !task.completed;
+    commit();
+    toast(
+        task.completed ? `Done: ${task.title}` : `Back on the list: ${task.title}`,
+        task.completed ? "success" : "info"
+    );
+}
+
+/* Deleting always asks first, then fades the card out. */
+function remove(task, li) {
+    const ask = typeof window.confirm === "function"
+        ? window.confirm(`Delete \u201c${task.title}\u201d? This cannot be undone.`)
+        : true;
+    if (!ask) return;
+
+    leave(li, () => {
+        if (editingId === task.id) editingId = null;
+        tasks = tasks.filter((t) => t.id !== task.id);
+        commit();
+        toast("Task deleted", "warn");
+    });
+}
+
+function saveEdit(task, changes) {
     const title = changes.title.trim();
     if (!title) {
         showError("Task title cannot be empty.");
         return;
     }
     clearError();
-    try {
-        await api(`/tasks/${task.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-                title,
-                priority: changes.priority,
-                due_date: changes.due_date,
-            }),
-        });
-    } catch (err) {
-        showError(err.message);
-        return;
-    }
+    task.title = title.slice(0, 200);
+    if (PRIORITIES.includes(changes.priority)) task.priority = changes.priority;
+    task.due_date = changes.due_date || null;
     editingId = null;
+    commit();
+    toast("Task updated", "success");
+}
+
+/* Re-read the store: once at start-up, and whenever another tab writes to it. */
+function refresh() {
+    tasks = ensureIds(readCache());
     render();
 }
 
-async function refresh() {
+/* ------------------------------- dark mode -------------------------------- */
+function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    const dark = theme === "dark";
+    if (metaTheme) {
+        metaTheme.setAttribute("content", dark ? "#150f24" : "#fbf8ff");
+    }
+    themeBtn.setAttribute("aria-pressed", String(dark));
+    const label = dark ? "Switch to light mode" : "Switch to dark mode";
+    themeBtn.setAttribute("aria-label", label);
+    themeBtn.title = label;
+}
+
+function toggleTheme() {
+    const dark = document.documentElement.dataset.theme === "dark";
+    applyTheme(dark ? "light" : "dark");
     try {
-        await api("/tasks");
-    } catch (err) {
-        showError(err.message);
+        localStorage.setItem(THEME_KEY, dark ? "light" : "dark");   // remembered
+    } catch {
+        /* storage blocked: the choice still holds for this visit */
     }
 }
 
+/* --------------------------------- events --------------------------------- */
 form.addEventListener("submit", (event) => {
     event.preventDefault();
     const title = input.value.trim();
     if (!title) {
-        showError("Type something first.");
+        input.setAttribute("aria-invalid", "true");
+        showError("Please type a task first \u2014 a few words is plenty.");
         input.focus();
         return;
     }
     clearError();
     input.value = "";
-    add({ title, priority: priorityEl.value, due_date: dueEl.value })
-        .catch((err) => showError(err.message));
+    add({ title, priority: priorityEl.value, due_date: dueEl.value });
+    input.focus();                            // ready for the next one
 });
 
 input.addEventListener("input", clearError);
+
+tabsEl.addEventListener("click", (event) => {
+    const tab = event.target.closest && event.target.closest("[data-filter]");
+    if (!tab) return;
+    filter = tab.dataset.filter || "all";
+    editingId = null;
+    syncTabs();
+    render();
+});
+
+searchEl.addEventListener("input", () => {
+    query = searchEl.value.trim().toLowerCase();   // filters the list as you type
+    render();
+});
+
+themeBtn.addEventListener("click", toggleTheme);
 
 prevBtn.addEventListener("click", () => stepMonth(-1));
 nextBtn.addEventListener("click", () => stepMonth(1));
 clearBtn.addEventListener("click", () => selectDate(selectedDate));
 
-render();      // paint the cached snapshot straight away
-refresh();     // then reconcile with SQLite
+/* Another tab changed the list - show what it did. */
+window.addEventListener("storage", (event) => {
+    if (!event || event.key === CACHE_KEY) refresh();
+});
+
+/* Escape clears a validation message. */
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && errorEl.hidden === false) clearError();
+});
+
+/* Follow the operating system while no explicit choice has been saved. */
+if (window.matchMedia) {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const followSystem = () => {
+        try {
+            if (!localStorage.getItem(THEME_KEY)) {
+                applyTheme(media.matches ? "dark" : "light");
+            }
+        } catch {
+            /* storage blocked: keep the theme as it is */
+        }
+    };
+    if (typeof media.addEventListener === "function") {
+        media.addEventListener("change", followSystem);
+    }
+}
+
+/* The page pre-set data-theme in the head; the rest paints from the store. */
+applyTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+syncTabs();
+refresh();

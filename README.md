@@ -17,8 +17,9 @@ Soft purple-and-pink theme on white, vanilla JS front end.
   to what is due that day. Click the day again, or the button under the calendar,
   to clear. `&lsaquo;` / `&rsaquo;` step through months.
 * **Inline editing.** The pencil on a row swaps it for title, priority and date
-  fields: `Enter` or **Save** applies the change via `PATCH /tasks/<id>`,
-  `Escape` or **Cancel** abandons it.
+  fields: `Enter` or **Save** applies the change, `Escape` or **Cancel** abandons
+  it. The list the page draws is kept in the browser (see
+  [How tasks are saved](#how-tasks-are-saved)), so saving needs no round trip.
 
 ## Priority and date rules
 
@@ -26,9 +27,10 @@ Soft purple-and-pink theme on white, vanilla JS front end.
   rejected with a 400.
 * Due dates must be `YYYY-MM-DD`, stored as plain text, or empty / omitted for
   "no due date".
-* Ordering comes from SQLite: open tasks first, then High &rarr; Medium &rarr; Low,
-  then soonest due date (undated tasks last, newest first). The three sections are
-  a client-side view of that order.
+* Ordering: the three sections run High &rarr; Medium &rarr; Low, and inside each
+  one the page sorts by due date, soonest first (undated tasks last, newest
+  first). The API's own ordering, which `/tasks` returns, is open tasks first,
+  then priority, then soonest due date.
 
 ## Run it
 
@@ -109,14 +111,20 @@ to find that single request in the log stream.
 
 ## How tasks are saved
 
-* **SQLite (`tasks.db`)** is the source of truth. Every add, toggle and delete is
-  committed to it, so tasks survive a server restart and are shared by everyone
-  who loads the page. `ZURATASKS_DB` moves the file (the app uses `/tmp/tasks.db`
-  on Vercel); see [Deploying to Vercel](#deploying-to-vercel).
-* **`localStorage`** (`zuratasks.snapshot` key) holds a snapshot of the last list the
-  browser received. On reload the UI paints from it immediately, then replaces it
-  with the authoritative list from `/tasks`. It is a cache for perceived speed,
-  not the store &mdash; clearing browser storage never loses tasks.
+The list lives in the browser. Ticking a task off on your phone will not change
+your laptop's list, and the API below stays available for scripting.
+
+* **`localStorage`** (`zuratasks.snapshot` key) is the store. Adding, ticking off,
+  editing and deleting each write the whole list back to it, so tasks survive a
+  refresh, a redeploy and a cold start. That is why it is used instead of a file
+  or SQLite: a Vercel Function cannot keep either. Reads and writes are both
+  wrapped in `try/catch`, so private browsing or a full quota leaves the app
+  usable for the visit (it says so once) instead of throwing on every change.
+* **SQLite (`tasks.db`)** now backs the JSON API and nothing else.
+  `ZURATASKS_DB` moves the file (the app uses `/tmp/tasks.db` on Vercel); see
+  [Deploying to Vercel](#deploying-to-vercel). To point the front end back at the
+  API, replace `readCache` / `writeCache` in `static/app.js` with `fetch` calls:
+  every route below already returns the full list.
 
 ## API
 

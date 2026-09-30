@@ -706,3 +706,601 @@ body {
         font-size: 1.6rem;
     }
 }
+
+/* ==========================================================================
+   Additions. Nothing above is removed: these rules extend what is there,
+   and re-declare a few hard-coded light colours so dark mode reads correctly.
+   ========================================================================== */
+
+/* ------------------------------ dark mode --------------------------------- */
+/* The same purple-to-pink gradient, on a deep violet background. Colours are
+   tokens, so restyling the whole app is one block of variables. */
+html[data-theme="dark"] {
+    --bg: #150f24;
+    --surface: #1f1836;
+    --surface-2: #271e44;
+    --border: #35295a;
+    --border-strong: #4b3a7e;
+    --text: #f0eaff;                   /* 12.9:1 on --surface */
+    --muted: #b6a7d8;                  /* 7.2:1 on --surface */
+    --accent: #a78bfa;
+    --accent-2: #f472b6;
+    --accent-dim: rgba(167, 139, 250, 0.20);
+    --grad: linear-gradient(120deg, #a78bfa, #d946ef 52%, #f472b6);
+    --grad-soft: linear-gradient(120deg, rgba(167, 139, 250, 0.20), rgba(244, 114, 182, 0.20));
+    --danger: #fb7185;
+    --prio-high: #fb7185;
+    --prio-medium: #a78bfa;
+    --prio-low: #2dd4bf;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 6px 16px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.6);
+    color-scheme: dark;                /* dark native date pickers and selects */
+}
+
+html[data-theme="dark"] body {
+    background:
+        radial-gradient(820px 460px at 8% -10%, rgba(244, 114, 182, 0.14), transparent 70%),
+        radial-gradient(700px 420px at 96% 2%, rgba(167, 139, 250, 0.18), transparent 70%),
+        radial-gradient(900px 520px at 50% 108%, rgba(217, 70, 239, 0.14), transparent 70%),
+        linear-gradient(180deg, #170f28 0%, #130d21 58%, #190f2c 100%) fixed,
+        var(--bg);
+}
+
+/* Colours written literally earlier in this file, for the dark palette. */
+html[data-theme="dark"] .item--done { background: #1a1430; }
+html[data-theme="dark"] .day--muted { color: #5d5083; }
+html[data-theme="dark"] .group__none { color: #7c6ba8; }
+html[data-theme="dark"] .item__check { background: var(--surface-2); }
+html[data-theme="dark"] ::selection { background: rgba(244, 114, 182, 0.3); }
+
+/* --------------------------- header: brand and logo ----------------------- */
+.app__brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+}
+
+/* The check badge beside the wordmark; the svg has no size of its own. */
+.app__logo {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    background: var(--grad);
+    border-radius: 12px;
+    box-shadow: var(--shadow-md);
+    color: #fff;
+}
+
+.app__logo svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* ---------------------- header: count plus progress bar ------------------- */
+.app__meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 7px;
+}
+
+.progress {
+    width: 140px;
+    height: 5px;
+    background: var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.progress[hidden] {
+    display: none;
+}
+
+.progress__bar {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--grad);
+    border-radius: 999px;
+    transition: width 0.4s ease;
+}
+
+/* ---------------------------- dark mode toggle ---------------------------- */
+.theme-toggle {
+    position: relative;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+    color: var(--accent);
+    cursor: pointer;
+    transition: color 0.18s, border-color 0.18s, background 0.18s, box-shadow 0.18s;
+}
+
+.theme-toggle:hover {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+    box-shadow: var(--shadow-md);
+}
+
+.theme-toggle svg {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 19px;
+    height: 19px;
+    transition: opacity 0.22s, transform 0.22s;
+}
+
+/* Light mode offers the moon (tap for dark), dark mode offers the sun. */
+.theme-toggle__sun {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(-45deg) scale(0.5);
+}
+
+.theme-toggle__moon {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+}
+
+html[data-theme="dark"] .theme-toggle__sun {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+}
+
+html[data-theme="dark"] .theme-toggle__moon {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(45deg) scale(0.5);
+}
+
+
+/* --------------------------- filter tabs + search ------------------------- */
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-sm);
+}
+
+.tab {
+    flex: 1 0 auto;
+    min-height: 34px;
+    padding: 7px 15px;
+    background: transparent;
+    border: 0;
+    border-radius: 999px;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 650;
+    cursor: pointer;
+    transition: color 0.18s, background 0.18s, box-shadow 0.18s;
+}
+
+.tab:hover {
+    color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.tab--active {
+    background: var(--grad);
+    color: #fff;
+    box-shadow: 0 6px 16px rgba(168, 85, 247, 0.3);
+}
+
+.tab--active:hover {
+    color: #fff;
+    filter: brightness(1.06);
+}
+
+.search {
+    position: relative;
+    flex: 1 1 190px;
+    max-width: 280px;
+}
+
+.search__icon {
+    position: absolute;
+    top: 50%;
+    left: 12px;
+    width: 16px;
+    height: 16px;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+}
+
+.search__input {
+    width: 100%;
+    min-height: 38px;
+    padding: 9px 14px 9px 35px;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-sm);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.82rem;
+    transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.search__input::placeholder {
+    color: var(--muted);
+}
+
+.search__input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-dim);
+}
+
+/* Tasks live inside a wrapper div, so the section spacing is needed there too. */
+.groups > div {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* --------------------------- task card, continued ------------------------- */
+/* The stripe colour is also set from the card's own class, so a card carries
+   its priority even if a future view pulls it out of its section. */
+.item--high { border-left-color: var(--prio-high); }
+.item--medium { border-left-color: var(--prio-medium); }
+.item--low { border-left-color: var(--prio-low); }
+
+/* A finished card fades whatever stripe it has (0,1,1 beats the rules above). */
+li.item--done {
+    border-left-color: var(--border-strong);
+}
+
+.item:hover {
+    border-color: var(--border-strong);
+}
+
+.item:hover .item__actions,
+.item:focus-within .item__actions {
+    opacity: 1;                     /* actions always visible on touch devices */
+}
+
+.item:focus-within {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-md);
+}
+
+.item__body {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.item__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.item__date {
+    color: var(--muted);
+    font-size: 0.7rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* Past due: red date, matching the red "Overdue" chip next to it. */
+.item__date--overdue {
+    color: var(--prio-high);
+    font-weight: 700;
+}
+
+.item--done .item__date,
+.item--done .item__date--overdue {
+    color: var(--muted);
+    font-weight: 600;
+    text-decoration: line-through;
+}
+
+.item__actions {
+    display: flex;
+    flex: none;
+    gap: 2px;
+    transition: opacity 0.18s;
+}
+
+/* Bigger hit area for the two card buttons; still unobtrusive on desktop. */
+.item__edit,
+.item__delete {
+    min-height: 32px;
+    padding: 6px 9px;
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+.item__delete {
+    font-size: 0.74rem;                /* was 20px for the "x" glyph alone */
+}
+
+/* ------------------------------ priority chip ----------------------------- */
+.chip--high {
+    background: rgba(225, 29, 72, 0.09);
+    border-color: rgba(225, 29, 72, 0.32);
+    color: var(--prio-high);
+}
+
+.chip--medium {
+    background: var(--accent-dim);
+    border-color: rgba(139, 92, 246, 0.35);
+    color: var(--prio-medium);
+}
+
+.chip--low {
+    background: rgba(13, 148, 136, 0.10);
+    border-color: rgba(13, 148, 136, 0.34);
+    color: var(--prio-low);
+}
+
+/* ------------------------- fade in / fade out cards ----------------------- */
+@keyframes item-in {
+    from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+    to   { opacity: 1; transform: none; }
+}
+
+@keyframes item-out {
+    from { opacity: 1; transform: none; }
+    to   { opacity: 0; transform: translateX(14px) scale(0.98); }
+}
+
+.item--enter {
+    animation: item-in 0.28s ease both;
+}
+
+.item--leaving {
+    animation: item-out 0.26s ease both;
+    pointer-events: none;
+}
+
+/* A day whose tasks are all finished keeps its dots, but quietly. */
+.day--clear .dot {
+    opacity: 0.45;
+}
+
+/* ------------------------------ empty state ------------------------------- */
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 34px 18px;
+    background: var(--surface);
+    border: 1px dashed var(--border-strong);
+    border-radius: 16px;
+    box-shadow: none;
+}
+
+.empty__icon {
+    display: grid;
+    place-items: center;
+    width: 68px;
+    height: 68px;
+    background: var(--grad-soft);
+    border-radius: 50%;
+    color: var(--accent);
+}
+
+.empty__text {
+    max-width: 34ch;
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
+/* -------------------------------- toasts ---------------------------------- */
+.toasts {
+    position: fixed;
+    bottom: 22px;
+    left: 50%;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: min(92vw, 430px);
+    transform: translateX(-50%);
+    pointer-events: none;                 /* toasts never block a tap */
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    padding: 10px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-left: 4px solid var(--accent);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    color: var(--text);
+    font-size: 0.8rem;
+    font-weight: 600;
+    animation: toast-in 0.24s ease both;
+}
+
+.toast--success { border-left-color: var(--prio-low); }
+.toast--warn { border-left-color: var(--prio-high); }
+.toast--info { border-left-color: var(--accent); }
+
+.toast--leaving {
+    animation: toast-out 0.3s ease both;
+}
+
+@keyframes toast-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.96); }
+    to   { opacity: 1; transform: none; }
+}
+
+@keyframes toast-out {
+    from { opacity: 1; transform: none; }
+    to   { opacity: 0; transform: translateY(8px) scale(0.97); }
+}
+
+/* --------------------------- validation feedback -------------------------- */
+@keyframes add-shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-5px); }
+    40% { transform: translateX(5px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(3px); }
+}
+
+.add--invalid {
+    animation: add-shake 0.32s ease;
+}
+
+.add__input[aria-invalid="true"],
+.item--editing input[aria-invalid="true"] {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 4px rgba(225, 29, 72, 0.14);
+}
+
+/* ------------------------------- responsive ------------------------------- */
+/* Phones: the add row stacks, the filters go full width, and the calendar is
+   already the first column of the grid, so it lands above the task list. */
+@media (max-width: 620px) {
+    .add {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+    }
+
+    .add__input,
+    .add__select,
+    .add__date,
+    .add__btn {
+        width: 100%;
+        min-height: 46px;               /* comfortable tap target */
+    }
+
+    .add__select,
+    .add__date {
+        font-size: 0.95rem;
+    }
+
+    .controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .tabs {
+        width: 100%;
+    }
+
+    .tab {
+        flex: 1 1 0;
+        min-height: 42px;
+        padding: 10px 6px;
+        font-size: 0.76rem;
+    }
+
+    .search {
+        max-width: none;
+        width: 100%;
+    }
+
+    .search__input {
+        min-height: 44px;
+        font-size: 0.95rem;             /* keeps iOS from zooming on focus */
+    }
+
+    .app__meta {
+        align-items: flex-start;
+    }
+
+    .theme-toggle {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 44px;
+        height: 44px;
+    }
+
+    /* Every control on a card is at least a 44px tap. */
+    .item__check {
+        width: 26px;
+        height: 26px;
+        font-size: 15px;
+    }
+
+    .item__edit,
+    .item__delete,
+    .btn-mini {
+        min-height: 44px;
+        padding: 10px 12px;
+    }
+
+    .item--editing {
+        gap: 8px;
+    }
+
+    .item--editing input[type="text"] {
+        flex: 1 1 100%;
+    }
+
+    .item--editing input[type="date"],
+    .item--editing select {
+        min-height: 44px;
+        font-size: 0.95rem;
+    }
+
+    .icon-btn {
+        width: 40px;
+        height: 40px;
+    }
+
+    .calendar__clear {
+        min-height: 44px;
+    }
+}
+
+/* Keep the toggle clear of the wordmark on very narrow screens. */
+@media (max-width: 620px) {
+    .app__header {
+        padding-right: 54px;
+        row-gap: 10px;
+    }
+}
+
+/* Respect a "reduce motion" setting: cards and toasts just appear. */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+
+    .item--leaving {
+        opacity: 0;
+    }
+}
+
