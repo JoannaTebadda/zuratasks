@@ -20,6 +20,13 @@ Soft purple-and-pink theme on white, vanilla JS front end.
   fields: `Enter` or **Save** applies the change, `Escape` or **Cancel** abandons
   it. The list the page draws is kept in the browser (see
   [How tasks are saved](#how-tasks-are-saved)), so saving needs no round trip.
+* **Subtasks and notes.** The chevron on a card slides open a panel with the
+  task's subtasks and notes. Subtasks are added with the button or `Enter`, get
+  a tick and a small delete, and a mini bar shows how many are done; the card
+  carries a `2/4` count and a note icon. Notes save themselves half a second
+  after you stop typing, and the box grows with the text. Ticking the last
+  subtask only *offers* to close the task, and deleting a task names the
+  subtasks it would take with it.
 
 ## Priority and date rules
 
@@ -120,6 +127,11 @@ your laptop's list, and the API below stays available for scripting.
   or SQLite: a Vercel Function cannot keep either. Reads and writes are both
   wrapped in `try/catch`, so private browsing or a full quota leaves the app
   usable for the visit (it says so once) instead of throwing on every change.
+  Each task is stored as `{id, title, completed, priority, due_date, created_at,
+  subtasks: [{id, text, done}], notes}`. Lists saved before subtasks and notes
+  existed have neither field: they load as an empty list and an empty string, so
+  an older save keeps working. The search box matches the title, every subtask
+  text and the notes.
 * **SQLite (`tasks.db`)** now backs the JSON API and nothing else.
   `ZURATASKS_DB` moves the file (the app uses `/tmp/tasks.db` on Vercel); see
   [Deploying to Vercel](#deploying-to-vercel). To point the front end back at the

@@ -24,6 +24,21 @@ const EMPTY_ICON = [
     '<path d="M8.5 12l2.4 2.4L16 9.5"></path></svg>',
 ].join("");
 
+/* Chevron for the details panel, inlined like the other artwork. */
+const CHEVRON_ICON = [
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"',
+    ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">',
+    '<path d="M6 9.5l6 6 6-6"></path></svg>',
+].join("");
+
+/* Shown on a card whose task has a note. */
+const NOTE_ICON = [
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"',
+    ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">',
+    '<path d="M6 3.5h8.5L19 8v12.5H6z"></path><path d="M14 3.5V8h5"></path>',
+    '<path d="M9 12.5h6M9 16h4"></path></svg>',
+].join("");
+
 const form        = document.getElementById("add-form");
 const input       = document.getElementById("add-input");
 const priorityEl  = document.getElementById("add-priority");
@@ -46,6 +61,10 @@ const metaTheme   = document.getElementById("theme-color");
 const toastsEl    = document.getElementById("toasts");
 const greetingEl  = document.getElementById("greeting");
 
+let subtaskSeq = 0;           // last subtask id handed out (ensureIds seeds it)
+const entering = new Set();   // ids to fade in on the next paint
+const expanded = new Set();   // ids of cards with the details panel open
+
 let tasks = ensureIds(readCache());
 let selectedDate = null;      // "YYYY-MM-DD" day picked in the calendar, or null
 let editingId = null;         // id of the task open in the inline editor
@@ -53,7 +72,6 @@ let focusEditor = false;      // jump into the title field on the next paint
 let filter = "all";           // all | today | upcoming | done
 let query = "";               // search text, lower-cased
 let canStore = true;          // false once localStorage refuses a write
-const entering = new Set();   // ids to fade in on the next paint
 
 const today = new Date();
 const view = { year: today.getFullYear(), month: today.getMonth() };
@@ -90,6 +108,18 @@ function isOverdue(task) {
 /* -------------------------------- storage -------------------------------- */
 /* localStorage is the only store, so both directions are guarded: private
    browsing, a full quota or blocked storage must never break the page. */
+/* A subtask: its own text and tick, with an id unique across the whole store. */
+function normaliseSubtask(raw) {
+    if (!raw || typeof raw.text !== "string" || !raw.text.trim()) return null;
+    return {
+        id: Number.isFinite(raw.id) ? Math.trunc(raw.id) : 0,
+        text: raw.text.trim().slice(0, 200),
+        done: Boolean(raw.done),
+    };
+}
+
+/* Lists saved before subtasks or notes existed have no fields at all, so both
+   default to empty and those tasks load exactly as they did before. */
 function normalise(task) {
     if (!task || typeof task.title !== "string" || !task.title.trim()) return null;
     return {
@@ -99,24 +129,43 @@ function normalise(task) {
         priority: PRIORITIES.includes(task.priority) ? task.priority : "medium",
         due_date: /^\d{4}-\d{2}-\d{2}$/.test(task.due_date) ? task.due_date : null,
         created_at: typeof task.created_at === "string" ? task.created_at : "",
+        subtasks: Array.isArray(task.subtasks)
+            ? task.subtasks.map(normaliseSubtask).filter(Boolean)
+            : [],
+        notes: typeof task.notes === "string" ? task.notes.slice(0, 4000) : "",
     };
 }
 
-/* Hand a fresh id to anything the stored list is missing or reusing. */
+/* Hand a fresh id to anything the stored list is missing or reusing. Task ids
+   and subtask ids are each unique across the whole store. */
 function ensureIds(list) {
-    const seen = new Set();
-    let max = 0;
+    const seenTasks = new Set();
+    const seenSubs = new Set();
+    let maxTask = 0;
+    let maxSub = subtaskSeq;
     for (const task of list) {
-        if (task.id > 0 && !seen.has(task.id)) {
-            seen.add(task.id);
-            max = Math.max(max, task.id);
+        if (task.id > 0 && !seenTasks.has(task.id)) {
+            seenTasks.add(task.id);
+            maxTask = Math.max(maxTask, task.id);
         } else {
             task.id = 0;                      // claimed again just below
         }
+        for (const sub of task.subtasks) {
+            if (sub.id > 0 && !seenSubs.has(sub.id)) {
+                seenSubs.add(sub.id);
+                maxSub = Math.max(maxSub, sub.id);
+            } else {
+                sub.id = 0;
+            }
+        }
     }
     for (const task of list) {
-        if (task.id === 0) task.id = ++max;
+        if (task.id === 0) task.id = ++maxTask;
+        for (const sub of task.subtasks) {
+            if (sub.id === 0) sub.id = ++maxSub;
+        }
     }
+    subtaskSeq = maxSub;                      // so new subtasks never reuse an id
     return list;
 }
 
@@ -202,8 +251,12 @@ function matchesFilter(task) {
     return true;                              // "all"
 }
 
+/* Matches the title, any subtask text, and the notes. */
 function matchesSearch(task) {
-    return query === "" || task.title.toLowerCase().includes(query);
+    if (query === "") return true;
+    return task.title.toLowerCase().includes(query) ||
+        task.subtasks.some((sub) => sub.text.toLowerCase().includes(query)) ||
+        task.notes.toLowerCase().includes(query);
 }
 
 /* The list shows: day filter, then tab, then search, sorted inside a section. */
@@ -376,7 +429,17 @@ function createItem(task) {
     const badge = document.createElement("span");
     badge.className = `chip chip--prio chip--${task.priority}`;
     badge.textContent = PRIORITY_LABEL[task.priority];
-    meta.appendChild(badge);
+
+    /* Compact counts for the collapsed card; the panel keeps them in step. */
+    const subChip = document.createElement("span");
+    subChip.className = "chip chip--subs";
+
+    const noteChip = document.createElement("span");
+    noteChip.className = "chip chip--note";
+    noteChip.innerHTML = NOTE_ICON;
+    noteChip.title = "Has notes";
+
+    meta.append(badge, subChip, noteChip);
 
     if (task.due_date) {
         const overdue = isOverdue(task);
@@ -409,6 +472,15 @@ function createItem(task) {
     const actions = document.createElement("div");
     actions.className = "item__actions";
 
+    const chevron = document.createElement("button");
+    chevron.type = "button";
+    chevron.className = "item__toggle";
+    chevron.innerHTML = CHEVRON_ICON;
+    chevron.setAttribute("aria-expanded", "false");
+    chevron.setAttribute("aria-controls", `panel-${task.id}`);
+    chevron.setAttribute("aria-label", `Subtasks and notes for ${task.title}`);
+    chevron.title = "Show subtasks";
+
     const edit = document.createElement("button");
     edit.type = "button";
     edit.className = "item__edit";
@@ -429,25 +501,290 @@ function createItem(task) {
     del.setAttribute("aria-label", `Delete: ${task.title}`);
     del.addEventListener("click", () => remove(task, li));
 
-    actions.append(edit, del);
+    actions.append(chevron, edit, del);
     li.append(check, body, actions);
+    li.appendChild(createPanel(task, { li, toggleBtn: chevron, subChip, noteChip }));
     return li;
 }
 
-/* Fade a card out, then apply the change; the timer covers "no animation". */
-function leave(li, finish) {
-    if (!li) {
+/* ----------------------------- details panel ------------------------------ */
+/* Subtasks live in this collapsible panel; each id is unique across the store. */
+function nextSubtaskId() {
+    subtaskSeq += 1;
+    return subtaskSeq;
+}
+
+/* The chevron opens this. It slides via a max-height transition, and
+   `expanded` keeps the open cards open across re-renders. */
+function createPanel(task, ui) {
+    const panel = document.createElement("div");
+    panel.className = "panel";
+    panel.id = `panel-${task.id}`;
+    panel.style.maxHeight = "0px";                 // collapsed by default
+
+    const inner = document.createElement("div");
+    inner.className = "panel__inner";
+
+    /* ---- subtasks ---- */
+    const section = document.createElement("section");
+    section.className = "panel__section";
+
+    const head = document.createElement("div");
+    head.className = "panel__head";
+    const heading = document.createElement("h3");
+    heading.className = "panel__title";
+    heading.textContent = "Subtasks";
+    const tally = document.createElement("span");
+    tally.className = "panel__count";
+    head.append(heading, tally);
+
+    const list = document.createElement("ul");
+    list.className = "subs";
+
+    const mini = document.createElement("div");
+    mini.className = "mini";
+    const miniBar = document.createElement("span");
+    miniBar.className = "mini__bar";
+    mini.appendChild(miniBar);
+
+    const addForm = document.createElement("form");
+    addForm.className = "subs__add";
+    const addInput = document.createElement("input");
+    addInput.type = "text";
+    addInput.className = "subs__input";
+    addInput.maxLength = 200;
+    addInput.placeholder = "Add a subtask\u2026";
+    addInput.setAttribute("aria-label", `New subtask for ${task.title}`);
+    const addBtn = document.createElement("button");
+    addBtn.type = "submit";
+    addBtn.className = "subs__btn";
+    addBtn.textContent = "Add subtask";
+    addForm.append(addInput, addBtn);
+
+    section.append(head, list, mini, addForm);
+    inner.appendChild(section);
+
+    /* ---- notes ---- */
+    const notesSection = document.createElement("section");
+    notesSection.className = "panel__section";
+
+    const notesHead = document.createElement("div");
+    notesHead.className = "panel__head";
+    const notesTitle = document.createElement("h3");
+    notesTitle.className = "panel__title";
+    notesTitle.textContent = "Notes";
+    const saved = document.createElement("span");
+    saved.className = "notes__saved";
+    saved.setAttribute("role", "status");
+    saved.textContent = "Saved";
+    notesHead.append(notesTitle, saved);
+
+    const notesArea = document.createElement("textarea");
+    notesArea.className = "notes__area";
+    notesArea.placeholder = "Add notes...";
+    notesArea.rows = 3;
+    notesArea.maxLength = 4000;
+    notesArea.value = task.notes;
+    notesArea.setAttribute("aria-label", `Notes for ${task.title}`);
+
+    notesSection.append(notesHead, notesArea);
+    inner.appendChild(notesSection);
+    panel.appendChild(inner);
+
+    /* Keep the mini bar, the tally and the card badge in step after a change. */
+    function sync() {
+        const total = task.subtasks.length;
+        const done = task.subtasks.filter((sub) => sub.done).length;
+        tally.textContent = total === 0 ? "none yet" : `${done} of ${total}`;
+        mini.hidden = total === 0;
+        miniBar.style.width = total === 0 ? "0%" : `${Math.round((done / total) * 100)}%`;
+        ui.subChip.hidden = total === 0;
+        ui.subChip.textContent = `${done}/${total}`;
+        ui.subChip.title = `${done} of ${total} subtasks done`;
+    }
+
+    /* One subtask row: tick, text, small delete. Built here so adding or
+       removing one never rebuilds the list (which would close the panels). */
+    function buildRow(sub) {
+        const row = document.createElement("li");
+        row.className = "sub";
+        row.dataset.id = String(sub.id);
+        if (sub.done) row.classList.add("sub--done");
+
+        const tick = document.createElement("button");
+        tick.type = "button";
+        tick.className = "sub__check";
+        tick.setAttribute("role", "checkbox");
+        tick.setAttribute("aria-checked", String(sub.done));
+        tick.setAttribute("aria-label", `Subtask: ${sub.text}`);
+        tick.addEventListener("click", () => tickSubtask(sub, row, tick));
+
+        const text = document.createElement("span");
+        text.className = "sub__text";
+        text.textContent = sub.text;
+
+        const drop = document.createElement("button");
+        drop.type = "button";
+        drop.className = "sub__delete";
+        drop.textContent = "\u00d7";
+        drop.title = "Delete subtask";
+        drop.setAttribute("aria-label", `Delete subtask: ${sub.text}`);
+        drop.addEventListener("click", () => dropSubtask(sub, row));
+
+        row.append(tick, text, drop);
+        return row;
+    }
+
+    /* Ticking a subtask is its own change. Finishing the last one only offers
+       to close the task; it never does that on its own. */
+    function tickSubtask(sub, row, tick) {
+        sub.done = !sub.done;
+        row.classList.toggle("sub--done", sub.done);
+        tick.setAttribute("aria-checked", String(sub.done));
+        writeCache();
+        sync();
+        if (sub.done && task.subtasks.every((item) => item.done) && !task.completed) {
+            const markDone = typeof window.confirm === "function"
+                ? window.confirm(
+                    `All subtasks are done. Mark \u201c${task.title}\u201d as done?`)
+                : false;
+            if (markDone) {
+                task.completed = true;        // the subtasks are left as they are
+                commit();
+                toast(`Done: ${task.title}`, "success");
+                return;
+            }
+        }
+        toast(sub.done ? "Subtask ticked" : "Subtask unticked",
+            sub.done ? "success" : "info");
+    }
+
+    function dropSubtask(sub, row) {
+        leave(row, () => {
+            task.subtasks = task.subtasks.filter((item) => item.id !== sub.id);
+            writeCache();
+            row.remove();
+            sync();
+            toast("Subtask deleted", "warn");
+        }, "sub--leaving");
+    }
+
+    /* Enter in the field submits the form, so both routes land here. */
+    addForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const text = addInput.value.trim();
+        if (!text) {
+            toast("A subtask needs a few words", "warn");
+            addInput.focus();
+            return;
+        }
+        const sub = { id: nextSubtaskId(), text: text.slice(0, 200), done: false };
+        task.subtasks.push(sub);
+        writeCache();
+        list.appendChild(buildRow(sub));
+        sync();
+        addInput.value = "";
+        addInput.focus();
+        toast("Subtask added", "success");
+    });
+
+    /* Notes save themselves half a second after you stop typing. The box grows
+       with the text, and the card badge appears as soon as there is a note. */
+    let notesTimer = null;
+    let savedTimer = null;
+
+    function syncNote() {
+        const has = task.notes.trim() !== "";
+        ui.noteChip.hidden = !has;
+        ui.noteChip.title = has ? "Has notes" : "";
+    }
+
+    function growNotes() {
+        notesArea.style.height = "auto";
+        notesArea.style.height = `${Math.max(76, notesArea.scrollHeight)}px`;
+    }
+
+    notesArea.addEventListener("input", () => {
+        task.notes = notesArea.value.slice(0, 4000);
+        growNotes();
+        syncNote();
+        saved.textContent = "Saving\u2026";
+        saved.classList.add("notes__saved--on");
+        clearTimeout(notesTimer);
+        clearTimeout(savedTimer);
+        notesTimer = setTimeout(() => {
+            writeCache();
+            saved.textContent = "Saved";
+            savedTimer = setTimeout(() => saved.classList.remove("notes__saved--on"), 1600);
+        }, 500);
+    });
+
+    syncNote();
+
+    /* ---- open and close ---- */
+    /* The inner box is never clipped itself, so its height is the true height
+       to animate to, whatever the panel's current max-height is. Once the slide
+       has run the height is handed back to the content, so adding a subtask or
+       growing the notes can never be clipped. The timer covers a browser that
+       fires no transitionend (a hidden tab, or animations turned off). */
+    function openPanel() {
+        expanded.add(task.id);
+        ui.li.classList.add("item--open");
+        ui.toggleBtn.setAttribute("aria-expanded", "true");
+        panel.style.maxHeight = `${inner.offsetHeight}px`;
+        growNotes();                          // show a long note in full
+        setTimeout(freeHeight, 320);
+    }
+
+    function freeHeight() {
+        if (expanded.has(task.id)) panel.style.maxHeight = "none";
+    }
+
+    function closePanel() {
+        expanded.delete(task.id);
+        ui.li.classList.remove("item--open");
+        ui.toggleBtn.setAttribute("aria-expanded", "false");
+        panel.style.maxHeight = `${inner.offsetHeight}px`;   // measure before closing
+        void panel.offsetHeight;                             // let that land first
+        panel.style.maxHeight = "0px";
+    }
+
+    ui.toggleBtn.addEventListener("click", () => {
+        if (expanded.has(task.id)) closePanel();
+        else openPanel();
+    });
+
+    /* Fully open, the height is left to the content so a new subtask is never
+       clipped; closing measures it again first. */
+    panel.addEventListener("transitionend", (event) => {
+        if (event.target === panel && expanded.has(task.id)) freeHeight();
+    });
+
+    for (const sub of task.subtasks) list.appendChild(buildRow(sub));
+    sync();
+
+    if (expanded.has(task.id)) {                 // a re-render of an open card
+        ui.li.classList.add("item--open");
+        ui.toggleBtn.setAttribute("aria-expanded", "true");
+        panel.style.maxHeight = "none";
+    }
+    return panel;
+}
+
+/* Fade a row out, then apply the change; the timer covers "no animation". */
+function leave(el, finish, className = "item--leaving") {
+    if (!el) {
         finish();
         return;
     }
-    li.classList.add("item--leaving");
+    el.classList.add(className);
     let done = false;
     const once = () => {
         if (done) return;
         done = true;
         finish();
     };
-    li.addEventListener("animationend", once);
+    el.addEventListener("animationend", once);
     setTimeout(once, 320);
 }
 
@@ -642,6 +979,8 @@ function add(payload) {
         priority: PRIORITIES.includes(payload.priority) ? payload.priority : "medium",
         due_date: payload.due_date || null,
         created_at: new Date().toISOString(),
+        subtasks: [],                 // filled in from the details panel
+        notes: "",                    // ditto
     };
     tasks.push(task);
     entering.add(task.id);          // fade this one card in on the next paint
@@ -651,6 +990,7 @@ function add(payload) {
     return task;
 }
 
+/* Ticking the card by hand never touches its subtasks: they stay as they are. */
 function toggle(task) {
     task.completed = !task.completed;
     commit();
@@ -660,10 +1000,14 @@ function toggle(task) {
     );
 }
 
-/* Deleting always asks first, then fades the card out. */
+/* Deleting always asks first, naming the subtasks it would take with it. */
 function remove(task, li) {
+    const subs = task.subtasks.length;
+    const extra = subs === 0 ? ""
+        : subs === 1 ? " and its 1 subtask"
+            : ` and its ${subs} subtasks`;
     const ask = typeof window.confirm === "function"
-        ? window.confirm(`Delete \u201c${task.title}\u201d? This cannot be undone.`)
+        ? window.confirm(`Delete \u201c${task.title}\u201d${extra}? This cannot be undone.`)
         : true;
     if (!ask) return;
 

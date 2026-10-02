@@ -1366,3 +1366,413 @@ li.item--done {
     }
 }
 
+/* ==========================================================================
+   Details panel: subtasks (and notes, further down). The card is a wrapping
+   flex row, so the panel takes a line of its own under the card's own row.
+   ========================================================================== */
+.item {
+    flex-wrap: wrap;
+    gap: 0 12px;                          /* the panel needs no row gap */
+}
+
+.item--open {
+    border-color: var(--border-strong);
+}
+
+/* A finished card stays readable while its panel is open. */
+.item--done.item--open {
+    opacity: 1;
+}
+
+/* The inline editor wraps its fields, so it keeps a row gap of its own. */
+.item--editing {
+    gap: 12px;
+}
+
+/* --------------------------- chevron on the card -------------------------- */
+.item__toggle {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    min-height: 32px;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.18s, background 0.18s;
+}
+
+.item__toggle:hover {
+    color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.item__toggle svg {
+    width: 15px;
+    height: 15px;
+    transition: transform 0.24s ease;
+}
+
+/* Points down when closed, up when the panel is open. */
+.item--open .item__toggle {
+    color: var(--accent);
+}
+
+.item--open .item__toggle svg {
+    transform: rotate(180deg);
+}
+
+/* ------------------------------- card badges ------------------------------ */
+.chip--subs {
+    background: var(--accent-dim);
+    border-color: rgba(139, 92, 246, 0.35);
+    color: var(--accent);
+}
+
+.chip--subs[hidden],
+.chip--note[hidden] {
+    display: none;
+}
+
+/* --------------------------------- the panel ------------------------------ */
+/* max-height is driven from app.js so the panel slides open and shut. */
+.panel {
+    flex: 1 1 100%;
+    width: 100%;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.28s ease;
+}
+
+.panel__inner {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 13px;
+    border-top: 1px solid var(--border);   /* the subtle divider */
+}
+
+.panel__section {
+    padding: 12px;
+    background: var(--surface-2);          /* soft background */
+    border: 1px solid var(--border);
+    border-radius: 12px;
+}
+
+.panel__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.panel__title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.panel__count {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+/* -------------------------------- subtasks -------------------------------- */
+.subs {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.subs:empty {
+    display: none;
+}
+
+.sub {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 7px;
+    border-radius: 9px;
+    transition: background 0.18s, opacity 0.18s;
+}
+
+.sub:hover {
+    background: var(--surface);
+}
+
+.sub__check {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    background: var(--surface);
+    border: 1.5px solid var(--border-strong);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
+}
+
+.sub__check::before {
+    content: "\2713";
+    font-weight: 700;
+    opacity: 0;
+}
+
+.sub__check:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-dim);
+}
+
+/* Ticked: gradient box, strike-through text, faded row. */
+.sub--done {
+    opacity: 0.72;
+}
+
+.sub--done .sub__check {
+    background: var(--grad);
+    border-color: transparent;
+}
+
+.sub--done .sub__check::before {
+    opacity: 1;
+}
+
+.sub__text {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.82rem;
+    word-break: break-word;
+}
+
+.sub--done .sub__text {
+    color: var(--muted);
+    text-decoration: line-through;
+    text-decoration-color: rgba(139, 92, 246, 0.45);
+}
+
+.sub__delete {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    background: transparent;
+    border: 0;
+    border-radius: 7px;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.18s, background 0.18s;
+}
+
+.sub__delete:hover {
+    color: var(--danger);
+    background: rgba(225, 29, 72, 0.10);
+}
+
+.sub--leaving {
+    animation: item-out 0.26s ease both;
+    pointer-events: none;
+}
+
+/* ------------------------- mini bar for this task ------------------------- */
+.mini {
+    height: 5px;
+    margin-bottom: 11px;
+    background: var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.mini[hidden] {
+    display: none;
+}
+
+.mini__bar {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--grad);
+    border-radius: 999px;
+    transition: width 0.3s ease;
+}
+
+/* ---------------------------- add a subtask ------------------------------- */
+.subs__add {
+    display: flex;
+    gap: 8px;
+}
+
+.subs__input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 9px 11px;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font: inherit;
+    font-size: 0.82rem;
+    transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.subs__input::placeholder {
+    color: var(--muted);
+}
+
+.subs__input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-dim);
+}
+
+.subs__btn {
+    flex: none;
+    padding: 9px 13px;
+    background: var(--grad);
+    border: 0;
+    border-radius: 10px;
+    color: #fff;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 650;
+    cursor: pointer;
+    transition: filter 0.18s, box-shadow 0.18s, transform 0.18s;
+}
+
+.subs__btn:hover {
+    filter: brightness(1.06);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+
+.subs__btn:active {
+    transform: translateY(1px);
+}
+
+/* Dark mode: the panel colours are tokens already, so only the mini track and
+   the tick boxes need a nudge to stay visible. */
+html[data-theme="dark"] .mini {
+    background: var(--border-strong);
+}
+
+html[data-theme="dark"] .sub__check {
+    background: var(--surface);
+}
+
+html[data-theme="dark"] .sub:hover {
+    background: rgba(167, 139, 250, 0.10);
+}
+
+/* Phones: the panel is full width already, so this is about easy tapping. */
+@media (max-width: 620px) {
+    .item__toggle {
+        width: 44px;
+        height: 44px;
+    }
+
+    .item__toggle svg {
+        width: 17px;
+        height: 17px;
+    }
+
+    .panel__section {
+        padding: 11px 10px;
+    }
+
+    .subs__add {
+        flex-direction: column;
+    }
+
+    .subs__input,
+    .subs__btn {
+        width: 100%;
+        min-height: 44px;
+        font-size: 0.95rem;
+    }
+
+    .sub {
+        gap: 10px;
+    }
+
+    .sub__check {
+        width: 26px;
+        height: 26px;
+        font-size: 15px;
+    }
+
+    .sub__delete {
+        width: 44px;
+        height: 44px;
+        font-size: 18px;
+    }
+}
+
+/* --------------------------------- notes ---------------------------------- */
+.chip--note svg {
+    display: block;
+    width: 13px;
+    height: 13px;
+}
+
+.notes__area {
+    display: block;
+    width: 100%;
+    min-height: 76px;
+    max-height: 320px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font: inherit;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    resize: none;                  /* the box grows with the text instead */
+    overflow-y: auto;
+    transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.notes__area::placeholder {
+    color: var(--muted);
+}
+
+.notes__area:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-dim);
+}
+
+/* The small "Saved" note that appears once the debounce has written. */
+.notes__saved {
+    margin-left: auto;
+    color: var(--prio-low);
+    font-size: 0.7rem;
+    font-weight: 650;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.notes__saved--on {
+    opacity: 1;
+}
+
+@media (max-width: 620px) {
+    .notes__area {
+        min-height: 88px;
+        font-size: 0.95rem;        /* keeps iOS from zooming on focus */
+    }
+}
+
